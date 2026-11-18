@@ -1,3 +1,21 @@
+export function spokenName(text) {
+  let name = String(text || '')
+    .replace(/[.,;:!?¿¡]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  let previous = ''
+  while (name && name !== previous) {
+    previous = name
+    name = name.replace(/^(se llama|él se llama|ella se llama|el nombre es|mi nombre es|a nombre de|fíale a|fiale a|para el|para la|para|es)\s+/i, '').trim()
+  }
+  if (!name) return ''
+  return name
+    .split(' ')
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ')
+}
+
 export function canListen() {
   if (typeof window === 'undefined') return false
   return Boolean(window.SpeechRecognition || window.webkitSpeechRecognition)

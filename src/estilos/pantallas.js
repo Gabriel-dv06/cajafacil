@@ -7,11 +7,14 @@ function screenPalette(dark, contrast) {
   return {
     bg: dark ? '#000000' : contrast ? '#FFFFFF' : colors.bg,
     card: dark ? '#161616' : colors.white,
-    text: dark ? '#FFFFFF' : colors.text,
-    muted: dark ? '#D0D0D0' : colors.muted,
-    line: dark ? '#3A3A3A' : colors.line,
-    ink: dark ? '#E7FFF0' : colors.greenInk,
+    text: dark ? '#FFFFFF' : contrast ? '#111111' : colors.text,
+    muted: dark ? '#D0D0D0' : contrast ? '#1A1A1A' : colors.muted,
+    line: dark ? '#3A3A3A' : contrast ? '#111111' : colors.line,
+    ink: dark ? '#E7FFF0' : contrast ? '#111111' : colors.greenInk,
     soft: dark ? '#123524' : colors.greenSoft,
+    helpBg: dark ? '#1A2744' : colors.blueSoft,
+    debtBg: dark ? '#2C2418' : colors.amberSoft,
+    debtLine: dark ? '#6A5430' : '#F0D7A2',
     avatarOn: dark ? '#123524' : '#F3FBF6',
     voidBg: dark ? '#241414' : '#FDF4F3',
     voidLine: dark ? '#6E3A3A' : '#E4C4C2',
@@ -194,14 +197,14 @@ function createScreenStyles(p) {
   methodLineText: { fontWeight: '800' },
   debtCard: {
     marginTop: 16,
-    backgroundColor: colors.amberSoft,
+    backgroundColor: p.debtBg,
     borderRadius: 16,
     padding: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     borderWidth: 1,
-    borderColor: '#F0D7A2',
+    borderColor: p.debtLine,
   },
   debtLabel: { color: colors.brownInk, fontWeight: '700' },
   debtHint: { color: colors.brown, marginTop: 2, fontSize: 12 },
@@ -225,7 +228,7 @@ function createScreenStyles(p) {
   },
   toggleTitle: { fontWeight: '800', color: p.text, marginBottom: 4 },
   toggleSub: { color: p.muted, fontSize: 13 },
-  helpCard: { backgroundColor: colors.blueSoft, borderRadius: 16, padding: 16 },
+  helpCard: { backgroundColor: p.helpBg, borderRadius: 16, padding: 16 },
   helpLabel: { color: colors.blue, fontWeight: '800', marginBottom: 6 },
   helpBody: { color: p.text, fontSize: 16, lineHeight: 22 },
   avatarRow: { flexDirection: 'row', gap: 10 },
@@ -365,5 +368,5 @@ function createScreenStyles(p) {
 export function useScreenStyles() {
   const { dark, contrast } = useLook()
   const p = screenPalette(dark, contrast)
-  return useMemo(() => createScreenStyles(p), [p.bg, p.card, p.text, p.muted, p.line, p.ink, p.soft, p.avatarOn, p.voidBg, p.voidLine, p.voidInk, p.voidHot, p.voidOn])
+  return useMemo(() => createScreenStyles(p), [p.bg, p.card, p.text, p.muted, p.line, p.ink, p.soft, p.helpBg, p.debtBg, p.debtLine, p.avatarOn, p.voidBg, p.voidLine, p.voidInk, p.voidHot, p.voidOn])
 }

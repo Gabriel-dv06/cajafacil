@@ -9,9 +9,9 @@ import {
   Switch,
   View,
 } from 'react-native'
-import { colors, helpText, methods, periods, quickAmounts, voiceText } from '../estilos/tema'
+import { colors, helpText, methodSurface, methods, periods, quickAmounts, voiceText } from '../estilos/tema'
 import { useScreenStyles } from '../estilos/pantallas'
-import { Text } from './texto'
+import { Text, toneColor, useLook } from './texto'
 import {
   addFiado,
   addProduct,
@@ -44,7 +44,7 @@ import {
 } from '../js/logica.mjs'
 import { useApp } from '../js/estado'
 import { canListen, startListening } from '../js/escucha'
-import { createSpeechLedger, sumCents, typedCents } from '../js/montos.mjs'
+import { appendDigit, appendDot, calcTotal, commitTyped, createSpeechLedger, sumCents, typedCents } from '../js/montos.mjs'
 import { usePhone } from '../js/telefono'
 import { speakAloud, stopAloud } from '../js/voz'
 import {
@@ -52,6 +52,7 @@ import {
   Button,
   ErrorText,
   Field,
+  NameField,
   Logo,
   MethodOption,
   Keypad,
@@ -74,6 +75,7 @@ import {
 import { DetailRow, Frame, Tab, cartItems, productText } from './marco'
 export function SaleAmount() {
   const styles = useScreenStyles()
+  const { dark, spacing } = useLook()
   const { draft, setDraft, pop, push, clearSale, goHome } = useApp()
   const { pad, short, narrow } = usePhone()
   const [ask, setAsk] = useState(null)
@@ -83,7 +85,6 @@ export function SaleAmount() {
   const [hearNote, setHearNote] = useState('')
   const entry = typedCents(typed)
   const lines = draft.sale.lines || []
-  const total = sumCents(lines) + entry
   const stopHear = useRef(null)
   const linesRef = useRef(lines)
   const typedRef = useRef('')
@@ -118,13 +119,12 @@ export function SaleAmount() {
   }
 
   function addTypedAmount() {
-    const cents = typedCents(typedRef.current)
-    if (cents <= 0) return
-    const nextLines = [...linesRef.current, cents]
+    const saved = commitTyped(linesRef.current, typedRef.current)
+    if (!saved.added) return
     clearedAt.current = Date.now()
     typedRef.current = ''
     setTyped('')
-    remember(nextLines)
+    remember(saved.lines)
     setDraft((current) => ({
       ...current,
       sale: { ...current.sale, pendingCents: 0 },
@@ -142,26 +142,12 @@ export function SaleAmount() {
 
   function typeDigit(digit) {
     if (hearingRef.current) finishHear()
-    const current = typedRef.current
-    if (current.includes('.')) {
-      const frac = current.split('.')[1]
-      if (frac.length >= 2) return
-      writeAmount(`${current}${digit}`)
-      return
-    }
-    if (current === '0') {
-      writeAmount(String(digit))
-      return
-    }
-    if (current.length >= 6) return
-    writeAmount(`${current}${digit}`)
+    writeAmount(appendDigit(typedRef.current, digit))
   }
 
   function typeDot() {
     if (hearingRef.current) finishHear()
-    const current = typedRef.current
-    if (current.includes('.')) return
-    writeAmount(`${current || '0'}.`)
+    writeAmount(appendDot(typedRef.current))
   }
 
   function typeBackspace() {
@@ -225,9 +211,16 @@ export function SaleAmount() {
   function goPay() {
     const wasHearing = hearingRef.current
     finishHear()
-    const pending = wasHearing ? 0 : typedCents(typedRef.current)
-    const cents = pending > 0 ? addAmounts([pending]) : sumCents(linesRef.current)
-    if (!wasHearing) writeAmount('')
+    if (!wasHearing) {
+      const saved = commitTyped(linesRef.current, typedRef.current)
+      if (saved.added) {
+        typedRef.current = ''
+        setTyped('')
+        remember(saved.lines)
+      }
+    }
+    const cents = sumCents(linesRef.current)
+    writeAmount('')
     if (cents <= 0) return
     push('salePay')
   }
@@ -287,10 +280,10 @@ export function SaleAmount() {
   }
 
   const spokenNow = hearing && speechView ? speechView.amounts : []
-  const registered = sumCents(lines)
-  const shown = hearing && speechView ? sumCents(speechView.base) + sumCents(spokenNow) : registered + entry
-  const hearingText = spokenNow.length ? centsToTyped(spokenNow[spokenNow.length - 1]) : ''
-  const boxValue = hearing ? hearingText : typed
+  const shown = hearing && speechView ? calcTotal(speechView.base, '') + sumCents(spokenNow) : calcTotal(lines, typed)
+  const parts = hearing && speechView
+    ? [...speechView.base, ...spokenNow]
+    : [...lines, ...(entry > 0 ? [entry] : [])]
 
   return (
     <View style={styles.screen}>
@@ -301,8 +294,8 @@ export function SaleAmount() {
           flexGrow: 1,
           justifyContent: short ? 'flex-start' : 'center',
           paddingHorizontal: pad,
-          paddingTop: 4,
-          paddingBottom: 16,
+          paddingTop: spacing > 1 ? 14 : 4,
+          paddingBottom: spacing > 1 ? 28 : 16,
         }}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
@@ -320,15 +313,62 @@ export function SaleAmount() {
               adjustsFontSizeToFit
               minimumFontScale={0.6}
               style={{
-                color: boxValue ? colors.text : colors.muted,
-                fontSize: boxValue.length > 6 ? (narrow ? 28 : 32) : short ? 34 : narrow ? 36 : 44,
+                color: shown ? colors.text : colors.muted,
+                fontSize: short ? 34 : narrow ? 36 : 44,
                 fontWeight: '800',
                 flexShrink: 1,
               }}
             >
-              {boxValue || '0.00'}
+              {formatMoney(shown).replace('S/', '')}
             </Text>
           </View>
+        </View>
+        <View style={[styles.chips, { marginTop: 0 }]}>
+          {quickAmounts.filter((amount) => [500, 1000, 2000].includes(amount.cents)).map((amount) => (
+            <Pressable
+              key={amount.cents}
+              accessibilityRole="button"
+              accessibilityLabel={`Sumar ${amount.label}`}
+              onPress={() => {
+                if (hearingRef.current) finishHear()
+                addAmounts([amount.cents])
+              }}
+              style={[styles.chip, { flexGrow: 1, flexBasis: 0, minHeight: 48, alignItems: 'center', justifyContent: 'center', paddingVertical: 10 }]}
+            >
+              <Text style={[styles.chipText, { color: '#000000', fontSize: narrow ? 16 : 18 }]}>{amount.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+        {parts.length ? (
+          <View style={{ marginTop: 2, marginBottom: 8, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 4 }}>
+            <Text style={{ color: colors.text, fontWeight: '800', fontSize: 16 }}>Tu registro:</Text>
+            {parts.map((cents, index) => {
+              const pending = !hearing && entry > 0 && index === parts.length - 1
+              return (
+                <View key={`${cents}-${index}`} style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  {index > 0 ? <Text style={{ color: colors.green, fontWeight: '800' }}> + </Text> : null}
+                  {pending ? (
+                    <Text style={{ color: colors.green, fontWeight: '800', fontSize: 16 }}>{formatMoney(cents)}</Text>
+                  ) : (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Quitar ${formatMoney(cents)}`}
+                      onPress={() => {
+                        if (hearing) return
+                        remember(lines.filter((_, item) => item !== index))
+                      }}
+                    >
+                      <Text style={{ color: colors.blue, fontWeight: '700', fontSize: 16 }}>{formatMoney(cents)}</Text>
+                    </Pressable>
+                  )}
+                </View>
+              )
+            })}
+          </View>
+        ) : null}
+        <View style={[styles.cajaCard, { marginTop: 4, marginBottom: 12 }]}>
+          <Text style={styles.cajaLabel}>Total de la venta</Text>
+          <Text style={styles.cajaMoney}>{formatMoney(shown)}</Text>
         </View>
         <View style={{ marginBottom: 10 }}>
           <Keypad
@@ -340,65 +380,38 @@ export function SaleAmount() {
             onDelete={typeBackspace}
           />
         </View>
-        <View style={[styles.chips, { marginTop: 2 }]}>
-          {quickAmounts.filter((amount) => [500, 1000, 2000].includes(amount.cents)).map((amount) => (
-            <Pressable
-              key={amount.cents}
-              accessibilityRole="button"
-              accessibilityLabel={`Sumar ${amount.label}`}
-              onPress={() => addAmounts([amount.cents])}
-              style={[styles.chip, { flexGrow: 1, flexBasis: 0, minHeight: 48, alignItems: 'center', justifyContent: 'center', paddingVertical: 10 }]}
-            >
-              <Text style={[styles.chipText, { color: '#000000', fontSize: narrow ? 16 : 18 }]}>{amount.label}</Text>
-            </Pressable>
-          ))}
-        </View>
-        {lines.length ? (
-          <View style={{ marginTop: 6, marginBottom: 12, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 4 }}>
-            <Text style={{ color: colors.text, fontWeight: '800', fontSize: 16 }}>Tu registro:</Text>
-            {lines.map((cents, index) => (
-              <View key={`${cents}-${index}`} style={{ flexDirection: 'row', alignItems: 'center' }}>
-                {index > 0 ? <Text style={{ color: colors.green, fontWeight: '800' }}> + </Text> : null}
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`Quitar ${formatMoney(cents)}`}
-                  onPress={() => remember(lines.filter((_, item) => item !== index))}
-                >
-                  <Text style={{ color: colors.blue, fontWeight: '700', fontSize: 16 }}>{formatMoney(cents)}</Text>
-                </Pressable>
-              </View>
-            ))}
-          </View>
-        ) : null}
-        <View style={[styles.cajaCard, { marginTop: 8, marginBottom: 0 }]}>
-          <Text style={styles.cajaLabel}>Total de la venta</Text>
-          <Text style={styles.cajaMoney}>{formatMoney(shown)}</Text>
-        </View>
       </ScrollView>
       <View style={{ paddingHorizontal: pad, paddingTop: 6, paddingBottom: short ? 8 : 14, gap: 8 }}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={hearing ? 'Dejar de escuchar' : 'Hablar el monto de la venta'}
-          onPress={toggleHear}
-          style={({ pressed }) => [
-            styles.hearBtn,
-            {
-              backgroundColor: 'transparent',
-              borderWidth: 2,
-              borderColor: hearing ? colors.red : colors.green,
-              marginBottom: 0,
-              minHeight: narrow ? 56 : 60,
-            },
-            pressed && { opacity: 0.86 },
-          ]}
-        >
-          <MicMark size={24} color={hearing ? colors.red : colors.green} />
-          <Text style={[styles.hearText, { color: hearing ? colors.red : colors.green }]}>
-            {hearing ? 'Te escucho' : 'Hablar'}
-          </Text>
-        </Pressable>
         {hearNote && !hearing ? <Text style={styles.hearNote}>{hearNote}</Text> : null}
-        <Button label="Siguiente" disabled={shown <= 0} onPress={goPay} />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={hearing ? 'Dejar de escuchar' : 'Hablar el monto de la venta'}
+            onPress={toggleHear}
+            style={({ pressed }) => [
+              styles.hearBtn,
+              {
+                backgroundColor: 'transparent',
+                borderWidth: 2,
+                borderColor: toneColor(hearing ? colors.red : colors.green, dark),
+                marginBottom: 0,
+                width: 112,
+                minHeight: 58,
+                paddingHorizontal: 8,
+                gap: 4,
+              },
+              pressed && { opacity: 0.86 },
+            ]}
+          >
+            <MicMark size={18} color={toneColor(hearing ? colors.red : colors.green, dark)} />
+            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75} style={[styles.hearText, { color: toneColor(hearing ? colors.red : colors.green, dark), fontSize: 14 }]}>
+              {hearing ? 'Alto' : 'Hablar'}
+            </Text>
+          </Pressable>
+          <View style={{ flex: 1 }}>
+            <Button label="Siguiente" disabled={shown <= 0} onPress={goPay} />
+          </View>
+        </View>
       </View>
       {ask ? (
         <ModalCard title={SALE_LEAVE_TITLE} body={SALE_LEAVE_BODY}>
@@ -420,6 +433,7 @@ export function SaleAmount() {
 
 export function SalePay() {
   const styles = useScreenStyles()
+  const { dark } = useLook()
   const { state, draft, setDraft, pop, push, patch, clearSale } = useApp()
   const sale = draft.sale
   const method = sale.method ? methods[sale.method] : null
@@ -449,7 +463,7 @@ export function SalePay() {
         footer={<Button label={buttonLabel} variant={buttonVariant} disabled={!canSave} onPress={save} />}
       >
         <Step>Paso 2 de 2</Step>
-        <View style={[styles.totalCard, styles.totalCompact, { backgroundColor: method ? method.soft : colors.blueSoft }]}>
+        <View style={[styles.totalCard, styles.totalCompact, { backgroundColor: methodSurface(method, dark) }]}>
           <Text style={styles.totalLabel}>Total</Text>
           <Text style={[styles.totalMoney, { color: method ? method.color : colors.blue }]}>{formatMoney(sale.cents)}</Text>
         </View>
@@ -479,11 +493,10 @@ export function SalePay() {
         ) : null}
         {sale.method === 'fiado' ? (
           <View style={{ marginTop: 14 }}>
-            <Field
+            <NameField
               label="¿A quién se lo fías?"
               value={sale.clientName}
               placeholder="Luis"
-              autoCapitalize="words"
               onChangeText={(clientName) =>
                 setDraft((current) => ({ ...current, sale: { ...current.sale, clientName } }))
               }
@@ -558,6 +571,7 @@ export function SaleSaved() {
 
 export function Sales() {
   const styles = useScreenStyles()
+  const { dark } = useLook()
   const { state, push, pop } = useApp()
   const [tab, setTab] = useState('guardadas')
   const rows = salesOf(state, { voided: tab === 'anuladas', all: true })
@@ -599,7 +613,12 @@ export function Sales() {
         <View>
           {days.map((day) => (
             <View key={day.key}>
-              <Text style={[styles.personName, { marginBottom: 8 }]}>{day.label}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 14, marginBottom: 8 }}>
+                <Text style={[styles.personName, { flex: 1 }]}>{day.label}</Text>
+                <Text style={[styles.personMoney, { fontSize: 15, flexShrink: 0 }]}>
+                  {formatMoney(day.sales.reduce((sum, sale) => sum + sale.cents, 0))}
+                </Text>
+              </View>
               <View style={{ gap: 10 }}>
                 {day.sales.map((sale) => (
                   <Pressable
@@ -612,7 +631,7 @@ export function Sales() {
                     <View style={{ flex: 1 }}>
                       <Text style={styles.personMeta}>{formatClock(sale.at)}</Text>
                       <View style={{ flexDirection: 'row', gap: 8, marginTop: 6, alignItems: 'center' }}>
-                        <View style={[styles.mini, { backgroundColor: methods[sale.method].soft }]}>
+                        <View style={[styles.mini, { backgroundColor: methodSurface(methods[sale.method], dark) }]}>
                           <Text style={[styles.miniText, { color: methods[sale.method].color }]}>
                             {methods[sale.method].label}
                           </Text>
@@ -636,6 +655,7 @@ export function Sales() {
         <View style={styles.cajaCard}>
           <Text style={styles.cajaLabel}>Caja de hoy</Text>
           <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={styles.cajaMoney}>{formatMoney(summary.total)}</Text>
+          <Text style={styles.cajaSub}>Solo las ventas guardadas de hoy. Es el mismo monto de Balance.</Text>
         </View>
       ) : null}
     </Frame>

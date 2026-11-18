@@ -1,15 +1,15 @@
 // Botones, teclado y barra. La vista usa estos componentes; los estilos están en estilos/componentes.js.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Animated, Easing, Image, Keyboard, Pressable, Text as Glyph, TextInput, View } from 'react-native'
-import { colors, voiceText } from '../estilos/tema'
+import { colors, methodSurface, voiceText } from '../estilos/tema'
 import { useUiStyles } from '../estilos/componentes'
 import { useScreenStyles } from '../estilos/pantallas'
-import { canListen, startListening } from '../js/escucha'
+import { canListen, spokenName, startListening } from '../js/escucha'
 import { formatMoney, formatPhone } from '../js/logica.mjs'
 import { spokenDigits } from '../js/montos.mjs'
 import { speakAloud, stopAloud } from '../js/voz'
 import { useApp } from '../js/estado'
-import { Text, useLook } from './texto'
+import { Text, toneColor, useLook } from './texto'
 import { usePhone } from '../js/telefono'
 
 export const SALE_LEAVE_TITLE = '¿Seguro que quieres salir de la venta?'
@@ -81,6 +81,7 @@ export const avatarGroups = [
 ]
 
 export function Avatar({ kind = 'woman', name = '', usePhoto = true, size = 48 }) {
+  const { dark } = useLook()
   if (!usePhoto) {
     return (
       <View
@@ -88,7 +89,7 @@ export function Avatar({ kind = 'woman', name = '', usePhoto = true, size = 48 }
           width: size,
           height: size,
           borderRadius: size / 2,
-          backgroundColor: colors.greenSoft,
+          backgroundColor: dark ? '#123524' : colors.greenSoft,
           alignItems: 'center',
           justifyContent: 'center',
         }}
@@ -476,29 +477,30 @@ export function MicMark({ size = 28, color = '#FFFFFF' }) {
   )
 }
 
-function EarMark({ color }) {
+function EarMark({ color, size = 16 }) {
+  const stroke = Math.max(1.5, Math.round(size * 0.12))
   return (
-    <View style={{ width: 26, height: 26, alignItems: 'center', justifyContent: 'center' }}>
+    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
       <View
         style={{
-          width: 16,
-          height: 22,
-          borderWidth: 3,
+          width: size * 0.62,
+          height: size * 0.84,
+          borderWidth: stroke,
           borderColor: color,
-          borderRadius: 10,
+          borderRadius: size * 0.4,
           alignItems: 'center',
           justifyContent: 'center',
         }}
       >
         <View
           style={{
-            width: 7,
-            height: 10,
-            borderWidth: 2,
+            width: size * 0.28,
+            height: size * 0.4,
+            borderWidth: Math.max(1, stroke - 0.5),
             borderRightWidth: 0,
             borderColor: color,
-            borderTopLeftRadius: 6,
-            borderBottomLeftRadius: 6,
+            borderTopLeftRadius: size * 0.22,
+            borderBottomLeftRadius: size * 0.22,
           }}
         />
       </View>
@@ -508,7 +510,6 @@ function EarMark({ color }) {
 
 function VoiceButton({ text }) {
   const styles = useUiStyles()
-  const { narrow } = usePhone()
   const [speaking, setSpeaking] = useState(false)
   const alive = useRef(true)
   const pulse = useRef(new Animated.Value(1)).current
@@ -528,8 +529,8 @@ function VoiceButton({ text }) {
     }
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulse, { toValue: 1.06, duration: 700, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 1, duration: 700, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1.04, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
       ]),
     )
     loop.start()
@@ -550,21 +551,21 @@ function VoiceButton({ text }) {
     speakAloud(text, { onStart: () => alive.current && setSpeaking(true), onEnd: finish })
   }
 
-  const ink = speaking ? '#FFFFFF' : '#06283A'
+  const ink = '#FFFFFF'
   const control = (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={speaking ? 'Detener la ayuda hablada' : 'Escuchar la ayuda de esta pantalla'}
       onPress={toggle}
+      hitSlop={6}
       style={({ pressed }) => [
         styles.voiceBtn,
-        narrow && { width: 84, minHeight: 60 },
         speaking && styles.voiceBtnOn,
-        pressed && styles.pressed,
+        pressed && { backgroundColor: speaking ? '#8E1216' : colors.greenInk, transform: [{ scale: 0.97 }] },
       ]}
     >
-      <EarMark color={ink} />
-      <Text style={{ color: ink, fontSize: 13, fontWeight: '800' }}>
+      <EarMark color={ink} size={20} />
+      <Text style={{ color: ink, fontSize: 15, fontWeight: '800' }}>
         {speaking ? 'Alto' : 'Escuchar'}
       </Text>
     </Pressable>
@@ -625,10 +626,11 @@ function MenuRow({ mark, label, hint, onPress, backgroundColor, borderColor, col
 
 export function TopBar({ mode = 'back', onBack, helpTopic, voice }) {
   const styles = useUiStyles()
-  const { push } = useApp()
+  const { push, route } = useApp()
   const { dark, contrast } = useLook()
   const [open, setOpen] = useState(false)
   const spoken = voice || (helpTopic ? voiceText[helpTopic] : '')
+  const showMenu = route?.name === 'account'
   useEffect(() => {
     setOpen(false)
   }, [helpTopic, spoken])
@@ -650,32 +652,34 @@ export function TopBar({ mode = 'back', onBack, helpTopic, voice }) {
         ) : <View />}
         <View style={styles.navRow}>
           {spoken ? <VoiceButton text={spoken} /> : null}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={open ? 'Cerrar el menú' : 'Abrir el menú'}
-            accessibilityState={{ expanded: open }}
-            onPress={() => setOpen((value) => !value)}
-            hitSlop={6}
-            style={({ pressed }) => [pressed && styles.pressed, { alignItems: 'center' }]}
-          >
-            <View
-              style={{
-                width: 60,
-                height: 60,
-                borderRadius: 30,
-                borderWidth: 3,
-                borderColor: '#111111',
-                backgroundColor: '#FFFFFF',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
+          {showMenu ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={open ? 'Cerrar el menú' : 'Abrir el menú'}
+              accessibilityState={{ expanded: open }}
+              onPress={() => setOpen((value) => !value)}
+              hitSlop={6}
+              style={({ pressed }) => [pressed && styles.pressed, { alignItems: 'center' }]}
             >
-              <MenuMark open={open} />
-            </View>
-          </Pressable>
+              <View
+                style={{
+                  width: 60,
+                  height: 60,
+                  borderRadius: 30,
+                  borderWidth: 3,
+                  borderColor: '#111111',
+                  backgroundColor: '#FFFFFF',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <MenuMark open={open} />
+              </View>
+            </Pressable>
+          ) : null}
         </View>
       </View>
-      {open ? (
+      {showMenu && open ? (
         <View
           style={{
             backgroundColor: dark ? '#161616' : '#FFFFFF',
@@ -706,11 +710,11 @@ export function TopBar({ mode = 'back', onBack, helpTopic, voice }) {
             <MenuRow
               mark={<AccessIcon />}
               label="Accesibilidad"
-              hint="Abrir accesibilidad"
+              hint="Abrir la explicación de accesibilidad"
               backgroundColor="#FFFFFF"
               borderColor={contrast ? '#111111' : '#159AAB'}
               color={contrast ? '#111111' : '#0C6A76'}
-              onPress={() => closeAnd('a11y')}
+              onPress={() => closeAnd('a11yGuide')}
             />
           ) : null}
         </View>
@@ -770,7 +774,7 @@ function DockHouse({ color }) {
 
 export function Dock() {
   const styles = useUiStyles()
-  const { dark } = useLook()
+  const { dark, contrast, scale } = useLook()
   const { route, draft, go, goHome, clearSale } = useApp()
   const [ask, setAsk] = useState(null)
   const name = route?.name
@@ -814,7 +818,7 @@ export function Dock() {
       <View style={styles.dock}>
         {tabs.map((tab) => {
           const on = selected(tab.id)
-          const color = on ? colors.green : dark ? '#FFFFFF' : '#1B1B1B'
+          const color = on ? toneColor(colors.green, dark) : dark ? '#FFFFFF' : contrast ? '#111111' : '#1B1B1B'
           const mark = {
             home: <DockHouse color={color} />,
             balance: <DockBars color={color} />,
@@ -830,12 +834,13 @@ export function Dock() {
               onPress={() => open(tab.id)}
               style={({ pressed }) => [
                 styles.dockItem,
+                { minHeight: Math.round(58 * Math.min(scale, 1.2)) },
                 on && { backgroundColor: dark ? '#123524' : colors.greenSoft },
                 pressed && { opacity: 0.82 },
               ]}
             >
               {mark}
-              <Text style={[styles.dockLabel, { color }]}>{tab.label}</Text>
+              <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={[styles.dockLabel, { color }]}>{tab.label}</Text>
             </Pressable>
           )
         })}
@@ -860,7 +865,7 @@ export function Dock() {
 
 export function Button({ label, onPress, variant = 'green', disabled = false }) {
   const styles = useUiStyles()
-  const { dark } = useLook()
+  const { dark, contrast } = useLook()
   const palette = {
     green: { bg: colors.green, text: colors.white },
     brown: { bg: colors.brown, text: colors.white },
@@ -869,10 +874,10 @@ export function Button({ label, onPress, variant = 'green', disabled = false }) 
     teal: { bg: colors.teal, text: colors.white },
     red: { bg: colors.red, text: colors.white },
     navy: { bg: colors.navy, text: colors.white },
-    outline: { bg: dark ? '#161616' : colors.white, text: dark ? '#FFFFFF' : colors.text, border: dark ? '#3A3A3A' : colors.line },
+    outline: { bg: dark ? '#161616' : colors.white, text: dark ? '#FFFFFF' : contrast ? '#111111' : colors.text, border: dark ? '#3A3A3A' : contrast ? '#111111' : colors.line },
   }
   const tone = disabled
-    ? { bg: colors.disabled, text: colors.disabledText, border: colors.disabled }
+    ? { bg: dark ? '#2C2C2C' : colors.disabled, text: dark ? '#D0D0D0' : colors.disabledText, border: dark ? '#2C2C2C' : colors.disabled }
     : palette[variant]
   return (
     <Pressable
@@ -892,17 +897,118 @@ export function Button({ label, onPress, variant = 'green', disabled = false }) 
   )
 }
 
-export function Field({ label, hint, ...props }) {
+export function Field({ label, hint, style, ...props }) {
   const styles = useUiStyles()
+  const { dark, scale } = useLook()
   return (
     <View style={{ marginBottom: 14 }}>
       {label ? <Text style={styles.label}>{label}</Text> : null}
       <TextInput
-        placeholderTextColor="#A3A093"
-        style={styles.input}
+        placeholderTextColor={dark ? '#C8C4B8' : '#A3A093'}
+        style={[styles.input, { fontSize: Math.round(16 * scale), minHeight: Math.round(52 * Math.min(scale, 1.25)) }, style]}
         {...props}
       />
       {hint ? <Text style={styles.hint}>{hint}</Text> : null}
+    </View>
+  )
+}
+
+export function NameField({ label, value, onChangeText, placeholder = 'Luis' }) {
+  const screen = useScreenStyles()
+  const { dark } = useLook()
+  const [hearing, setHearing] = useState(false)
+  const [note, setNote] = useState('')
+  const stopRef = useRef(null)
+  const hearingRef = useRef(false)
+  const heardRef = useRef(value)
+  const valueRef = useRef(value)
+  valueRef.current = value
+
+  useEffect(() => {
+    return () => {
+      hearingRef.current = false
+      if (stopRef.current) stopRef.current()
+      stopAloud()
+    }
+  }, [])
+
+  function stop() {
+    hearingRef.current = false
+    setHearing(false)
+    if (!stopRef.current) return
+    const end = stopRef.current
+    stopRef.current = null
+    end()
+  }
+
+  function toggle() {
+    if (hearingRef.current) {
+      stop()
+      const heard = (heardRef.current || valueRef.current).trim()
+      setNote(heard.length >= 2 ? `Quedó registrado: ${heard}` : 'No escuché el nombre. Toca otra vez.')
+      return
+    }
+    if (!canListen()) {
+      const message = 'En este celular no puedo escuchar. Escribe el nombre.'
+      setNote(message)
+      speakAloud(message)
+      return
+    }
+    stopAloud()
+    hearingRef.current = true
+    heardRef.current = valueRef.current
+    setHearing(true)
+    setNote('Habla el nombre.')
+    stopRef.current = startListening({
+      onLive: (text) => {
+        if (!hearingRef.current) return
+        const name = spokenName(text)
+        if (!name) return
+        heardRef.current = name
+        onChangeText(name)
+      },
+      onPhrase: () => {},
+      onEnd: () => stop(),
+      onError: (code) => {
+        stop()
+        const message = code === 'not-allowed'
+          ? 'Permite el micrófono para decir el nombre.'
+          : 'No pude escuchar. Toca Decir el nombre otra vez.'
+        setNote(message)
+        speakAloud(message)
+      },
+    })
+  }
+
+  const ink = toneColor(hearing ? colors.red : colors.green, dark)
+  return (
+    <View style={{ marginBottom: 8 }}>
+      <Field
+        label={label}
+        value={value}
+        placeholder={placeholder}
+        autoCapitalize="words"
+        onChangeText={onChangeText}
+      />
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={hearing ? 'Dejar de escuchar el nombre' : 'Decir el nombre'}
+        onPress={toggle}
+        style={({ pressed }) => [
+          screen.hearBtn,
+          {
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            borderColor: ink,
+            minHeight: 60,
+          },
+          pressed && { opacity: 0.86 },
+        ]}
+      >
+        <MicMark size={24} color={ink} />
+        <Text style={[screen.hearText, { color: ink }]}>{hearing ? 'Te escucho' : 'Decir el nombre'}</Text>
+      </Pressable>
+      {note && !hearing ? <Text style={screen.hearNote}>{note}</Text> : null}
     </View>
   )
 }
@@ -949,7 +1055,9 @@ export function MoneyBig({ cents, label, color = colors.text }) {
 export function Keypad({ onDigit, onDelete, onAdd, onEquals, onDot, addEnabled = true, showDot = false, keyHeight = 58 }) {
   const styles = useUiStyles()
   const { keyHeight: fitted, short } = usePhone()
-  const height = Math.min(keyHeight, fitted)
+  const { scale, spacing } = useLook()
+  const grow = Math.min(1.28, Math.max(scale, spacing > 1 ? 1.08 : 1))
+  const height = Math.round(Math.min(keyHeight, fitted) * grow)
   const gap = short ? 8 : 10
   const rows = [
     ['1', '2', '3'],
@@ -975,36 +1083,28 @@ export function Keypad({ onDigit, onDelete, onAdd, onEquals, onDot, addEnabled =
     )
   }
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'stretch', gap }}>
-      <View style={{ flex: 3, gap }}>
-        {rows.map((row) => (
-          <View key={row.join('')} style={styles.keyRow}>
-            {row.map((key) => (
-              <Key key={key} label={key} height={height} onPress={() => onDigit(Number(key))} />
-            ))}
-          </View>
-        ))}
-        <View style={styles.keyRow}>
-          <Key label="." height={height} onPress={onDot} />
-          <Key label="0" height={height} grow={2} onPress={() => onDigit(0)} />
+    <View style={{ gap }}>
+      {rows.map((row) => (
+        <View key={row.join('')} style={styles.keyRow}>
+          {row.map((key) => (
+            <Key key={key} label={key} height={height} onPress={() => onDigit(Number(key))} />
+          ))}
+          {row[0] === '1' ? <Key label="⌫" height={height} danger onPress={onDelete} /> : null}
+          {row[0] === '4' ? <Key label="+" height={height} accent pulse={addEnabled} onPress={onAdd} /> : null}
+          {row[0] === '7' ? <Key label="=" height={height} result onPress={onEquals} /> : null}
         </View>
-      </View>
-      <View style={{ flex: 1.15, gap }}>
-        <View style={{ height, zIndex: 2, overflow: 'hidden' }}>
-          <Key label="⌫" height={height} grow={0} danger onPress={onDelete} />
-        </View>
-        <View style={{ flex: 1, minHeight: height, zIndex: 1, overflow: 'hidden' }}>
-          <Key label="+" fill accent pulse={addEnabled} onPress={addEnabled ? onAdd : undefined} />
-        </View>
-        <View style={{ height, zIndex: 2, overflow: 'hidden' }}>
-          <Key label="=" height={height} grow={0} result onPress={onEquals} />
-        </View>
+      ))}
+      <View style={styles.keyRow}>
+        <Key label="." height={height} onPress={onDot} />
+        <Key label="0" height={height} grow={2} onPress={() => onDigit(0)} />
+        <View style={{ flexGrow: 1, flexBasis: 0, height }} />
       </View>
     </View>
   )
 }
 
 function EraseMark() {
+  const { dark } = useLook()
   return (
     <View style={{ width: 26, height: 22, alignItems: 'center', justifyContent: 'center' }}>
       <View
@@ -1013,7 +1113,7 @@ function EraseMark() {
           height: 12,
           borderLeftWidth: 3,
           borderBottomWidth: 3,
-          borderColor: colors.red,
+          borderColor: toneColor(colors.red, dark),
           transform: [{ rotate: '45deg' }],
           marginLeft: 4,
         }}
@@ -1027,7 +1127,7 @@ function Key({ label, onPress, height, grow = 1, fill = false, danger = false, m
   const { dark } = useLook()
   const glow = useRef(new Animated.Value(1)).current
   const name = label === '⌫' ? 'Borrar el último número' : label === '+' ? 'Sumar este monto' : label === '=' ? 'Igual, dejar el total' : label === '.' ? 'Punto decimal' : label
-  const background = result ? colors.green : accent ? colors.blue : danger ? colors.redSoft : dark ? '#161616' : colors.white
+  const background = result ? colors.green : accent ? colors.blue : danger ? (dark ? '#3A1618' : colors.redSoft) : dark ? '#2A2A2A' : colors.white
   const edge = result ? '#0F4D28' : accent ? '#163AA8' : danger ? '#E3B0AD' : dark ? '#2A2A2A' : '#D5D0C4'
   const symbol = label === '+' || label === '.' || label === '='
 
@@ -1038,7 +1138,7 @@ function Key({ label, onPress, height, grow = 1, fill = false, danger = false, m
     }
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(glow, { toValue: 0.45, duration: 520, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(glow, { toValue: 0.82, duration: 700, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
         Animated.timing(glow, { toValue: 1, duration: 520, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
       ]),
     )
@@ -1217,6 +1317,7 @@ export function YapePanel({ brand = 'yape', cents, phone, qr, note = '', onNote,
   const hearingRef = useRef(false)
   const shown = formatPhone(phone)
   const money = formatMoney(cents)
+  const { dark, scale } = useLook()
   const plin = brand === 'plin'
   const name = plin ? 'Plin' : 'Yape'
   const color = plin ? colors.teal : colors.purple
@@ -1302,12 +1403,12 @@ export function YapePanel({ brand = 'yape', cents, phone, qr, note = '', onNote,
             <TextInput
               value={note}
               placeholder="Ejemplo: 123456"
-              placeholderTextColor="#A3A093"
+              placeholderTextColor={dark ? '#C8C4B8' : '#A3A093'}
               keyboardType="number-pad"
               onChangeText={onNote}
               style={[
                 ui.input,
-                { flexGrow: 1, flexBasis: 140, minWidth: 0 },
+                { flexGrow: 1, flexBasis: 140, minWidth: 0, fontSize: Math.round(16 * scale), minHeight: Math.round(52 * Math.min(scale, 1.25)) },
                 hearing && { borderColor: colors.red, borderWidth: 2 },
               ]}
             />
@@ -1335,6 +1436,7 @@ export function YapePanel({ brand = 'yape', cents, phone, qr, note = '', onNote,
 export function MethodOption({ method, selected, onPress, leading }) {
   const styles = useUiStyles()
   const { narrow } = usePhone()
+  const { dark } = useLook()
   return (
     <Pressable
       accessibilityRole="button"
@@ -1345,7 +1447,7 @@ export function MethodOption({ method, selected, onPress, leading }) {
         styles.method,
         narrow && { paddingHorizontal: 10 },
         {
-          backgroundColor: selected ? method.color : method.soft,
+          backgroundColor: selected ? method.color : methodSurface(method, dark),
         },
         pressed && styles.pressed,
       ]}

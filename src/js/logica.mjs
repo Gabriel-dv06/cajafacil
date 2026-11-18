@@ -1,5 +1,3 @@
-const TARGET = { semana: 84250, quincena: 176400, mes: 351200 }
-
 export const DEMO_PHONE = '999888777'
 export const DEMO_PIN = '123456'
 export const DEMO_CODE = '123456'
@@ -138,16 +136,6 @@ export function removeProduct(state, id) {
   return next
 }
 
-function extrasFrom(todayTotal) {
-  const extras = {}
-  for (const [key, target] of Object.entries(TARGET)) {
-    const rest = target - todayTotal
-    const efectivo = Math.round(rest * 0.6)
-    extras[key] = { efectivo, yape: rest - efectivo }
-  }
-  return extras
-}
-
 export function createInitialState(now = new Date()) {
   const sales = [
     {
@@ -195,7 +183,6 @@ export function createInitialState(now = new Date()) {
       voided: false,
     },
   ]
-  const todayTotal = sales.reduce((sum, sale) => sum + sale.cents, 0)
   return {
     seq: 20,
     sessionUserId: null,
@@ -237,7 +224,7 @@ export function createInitialState(now = new Date()) {
             ],
           },
         ],
-        extras: extrasFrom(todayTotal),
+        extras: emptyExtras(),
         catalog: defaultCatalog(),
       },
     },
@@ -367,22 +354,41 @@ export function salesOf(state, { voided, now = new Date(), all = false }) {
     .sort((a, b) => b.at - a.at)
 }
 
+export function inPeriod(ms, period, now = new Date()) {
+  const when = new Date(stamp(ms))
+  const today = new Date(stamp(now))
+  if (period === 'hoy' || !period) return isSameDay(when, today)
+  if (period === 'semana') {
+    const start = new Date(today)
+    start.setHours(0, 0, 0, 0)
+    const weekday = start.getDay()
+    start.setDate(start.getDate() - (weekday === 0 ? 6 : weekday - 1))
+    const end = new Date(today)
+    end.setHours(23, 59, 59, 999)
+    return when >= start && when <= end
+  }
+  if (period === 'quincena') {
+    const day = today.getDate()
+    const start = new Date(today.getFullYear(), today.getMonth(), day <= 15 ? 1 : 16, 0, 0, 0, 0)
+    const end = day <= 15
+      ? new Date(today.getFullYear(), today.getMonth(), 15, 23, 59, 59, 999)
+      : new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999)
+    return when >= start && when <= end
+  }
+  if (period === 'mes') return when.getFullYear() === today.getFullYear() && when.getMonth() === today.getMonth()
+  return false
+}
+
 export function periodSummary(state, period, now = new Date()) {
   const book = currentBook(state)
-  const todaySales = book.sales.filter((sale) => !sale.voided && isSameDay(sale.at, now))
-  const sum = (method) => todaySales.filter((sale) => sale.method === method).reduce((total, sale) => total + sale.cents, 0)
+  const sales = book.sales.filter((sale) => !sale.voided && inPeriod(sale.at, period, now))
+  const sum = (method) => sales.filter((sale) => sale.method === method).reduce((total, sale) => total + sale.cents, 0)
   const summary = {
     efectivo: sum('efectivo'),
     yape: sum('yape'),
     plin: sum('plin'),
     fiado: sum('fiado'),
-    count: todaySales.length,
-  }
-  if (period !== 'hoy') {
-    const extra = book.extras[period]
-    summary.efectivo += extra.efectivo
-    summary.yape += extra.yape
-    summary.plin += extra.plin || 0
+    count: sales.length,
   }
   summary.total = summary.efectivo + summary.yape + summary.plin + summary.fiado
   summary.debt = totalDebt(state)

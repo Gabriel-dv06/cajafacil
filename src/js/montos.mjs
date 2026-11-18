@@ -61,6 +61,36 @@ export function sumCents(list) {
   return (list || []).reduce((total, cents) => total + (Number(cents) || 0), 0)
 }
 
+export function appendDigit(current, digit) {
+  const text = String(current || '')
+  const key = String(digit)
+  if (!/^\d$/.test(key)) return text
+  if (text.includes('.')) {
+    const frac = text.split('.')[1] || ''
+    if (frac.length >= 2) return text
+    return `${text}${key}`
+  }
+  if (text === '0') return key
+  if (text.length >= 6) return text
+  return `${text}${key}`
+}
+
+export function appendDot(current) {
+  const text = String(current || '')
+  if (text.includes('.')) return text
+  return `${text || '0'}.`
+}
+
+export function calcTotal(lines, typed) {
+  return sumCents(lines) + typedCents(typed)
+}
+
+export function commitTyped(lines, typed) {
+  const cents = typedCents(typed)
+  if (cents <= 0) return { lines: lines || [], typed: String(typed || ''), added: false }
+  return { lines: [...(lines || []), cents], typed: '', added: true }
+}
+
 export function spokenMoney(cents) {
   const soles = Math.floor(Math.abs(cents) / 100)
   const dec = Math.abs(cents) % 100

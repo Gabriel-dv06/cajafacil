@@ -6,10 +6,10 @@ export function setSpeechRate(slow) {
   rate = slow ? 0.75 : 0.9
 }
 
-export function speakAloud(text, { onStart, onEnd } = {}) {
+export function speakAloud(text, { onStart, onEnd, rate: customRate } = {}) {
   Speech.speak(text, {
     language: 'es-PE',
-    rate,
+    rate: customRate ?? rate,
     pitch: 1,
     volume: 1,
     onStart,

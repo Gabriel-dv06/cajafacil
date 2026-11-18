@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native'
 import * as ImagePicker from 'expo-image-picker'
+import { checkQrFile } from '../js/esqr.mjs'
 import { colors, helpText, methods, periods } from '../estilos/tema'
 import { useScreenStyles } from '../estilos/pantallas'
 import { Text, useLook } from './texto'
@@ -495,6 +496,7 @@ export function WalletSettings({ brand }) {
   const [qr, setQr] = useState(user?.[qrKey] || '')
   const [error, setError] = useState('')
   const [dialog, setDialog] = useState('')
+  const [checking, setChecking] = useState(false)
 
   async function pickQr() {
     setError('')
@@ -508,17 +510,26 @@ export function WalletSettings({ brand }) {
         mediaTypes: ['images'],
         allowsEditing: false,
         base64: true,
-        quality: 1,
+        quality: 0.85,
       })
       if (result.canceled) return
       const asset = result.assets[0]
       if (!asset.base64) {
-        setError('No se pudo leer la imagen del QR. Intenta seleccionar otra.')
+        setError('No se pudo leer el archivo. Elige una foto JPG o PNG del QR.')
         return
       }
-      setQr(`data:${asset.mimeType || 'image/jpeg'};base64,${asset.base64}`)
+      setChecking(true)
+      const check = await checkQrFile({ base64: asset.base64 })
+      if (!check.ok) {
+        setError(check.error)
+        return
+      }
+      const mime = check.kind === 'png' ? 'image/png' : 'image/jpeg'
+      setQr(`data:${mime};base64,${asset.base64}`)
     } catch (pickerError) {
-      setError(`No se pudo abrir la galería: ${pickerError.message}`)
+      setError('No se pudo abrir la galería. Intenta otra vez.')
+    } finally {
+      setChecking(false)
     }
   }
 
@@ -580,8 +591,8 @@ export function WalletSettings({ brand }) {
             onChangeText={(value) => { setPhone(value.replace(/\D/g, '').slice(0, 9)); setError('') }}
           />
           <Text style={styles.toggleTitle}>Sube tu QR</Text>
-          <Sub>Selecciona una imagen del QR de {name}. Es opcional.</Sub>
-          <Button label={qr ? 'Cambiar QR' : 'Subir QR'} variant="outline" onPress={pickQr} />
+          <Sub>Solo el código QR de {name}, en foto JPG o PNG. Si es otra imagen u otro archivo, no se guarda.</Sub>
+          <Button label={checking ? 'Revisando el QR...' : qr ? 'Cambiar QR' : 'Subir QR'} variant="outline" disabled={checking} onPress={pickQr} />
           {qr ? (
             <View style={{ alignItems: 'center', marginTop: 12 }}>
               <Image

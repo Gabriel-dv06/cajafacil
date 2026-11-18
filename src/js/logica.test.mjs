@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import zlib from 'node:zlib'
 import {
   addFiado,
   addSale,
@@ -10,6 +11,7 @@ import {
   formatPhone,
   login,
   payPhone,
+  inPeriod,
   periodSummary,
   personDebt,
   register,
@@ -21,7 +23,8 @@ import {
   voidSale,
 } from './logica.mjs'
 import { qrMatrix } from './qr.mjs'
-import { applySpeech, createSpeechLedger, parseSpokenAmounts, spokenDigits, sumCents, typedCents } from './montos.mjs'
+import { checkQrFile, decodeJpeg, imageHasQr, sniffImage } from './esqr.mjs'
+import { appendDigit, appendDot, applySpeech, calcTotal, commitTyped, createSpeechLedger, parseSpokenAmounts, spokenDigits, sumCents, typedCents } from './montos.mjs'
 
 const now = new Date(2026, 9, 30, 18, 0, 0)
 
@@ -38,9 +41,9 @@ test('la caja inicial coincide con el prototipo', () => {
   assert.equal(formatMoney(hoy.yape), 'S/15.50')
   assert.equal(formatMoney(hoy.plin), 'S/0.00')
   assert.equal(formatMoney(hoy.fiado), 'S/10.00')
-  assert.equal(formatMoney(periodSummary(state, 'semana', now).total), 'S/842.50')
-  assert.equal(formatMoney(periodSummary(state, 'quincena', now).total), 'S/1,764.00')
-  assert.equal(formatMoney(periodSummary(state, 'mes', now).total), 'S/3,512.00')
+  assert.equal(formatMoney(periodSummary(state, 'semana', now).total), 'S/55.50')
+  assert.equal(formatMoney(periodSummary(state, 'quincena', now).total), 'S/55.50')
+  assert.equal(formatMoney(periodSummary(state, 'mes', now).total), 'S/55.50')
   assert.equal(formatMoney(totalDebt(state)), 'S/17.00')
   assert.equal(formatPhone('999888777'), '999 888 777')
 })
@@ -51,7 +54,7 @@ test('anotar una venta en efectivo entra a la caja', () => {
   assert.equal(saved.ok, true)
   state = saved.state
   assert.equal(formatMoney(periodSummary(state, 'hoy', now).total), 'S/65.50')
-  assert.equal(formatMoney(periodSummary(state, 'semana', now).total), 'S/852.50')
+  assert.equal(formatMoney(periodSummary(state, 'semana', now).total), 'S/65.50')
 })
 
 test('anular un fiado lo saca de la caja y de la deuda', () => {
@@ -61,6 +64,51 @@ test('anular un fiado lo saca de la caja y de la deuda', () => {
   assert.equal(formatMoney(periodSummary(state, 'hoy', now).total), 'S/45.50')
   assert.equal(formatMoney(totalDebt(state)), 'S/7.00')
   assert.equal(state.books.flor.sales.find((sale) => sale.id === 's4').voidAt, voidAt)
+})
+
+test('el balance suma las ventas guardadas de cada periodo', () => {
+  const state = flor()
+  state.books.flor.sales.push(
+    {
+      id: 's-week',
+      at: new Date(2026, 9, 27, 10, 0).getTime(),
+      cents: 200,
+      method: 'yape',
+      products: [],
+      note: '',
+      clientName: '',
+      kind: 'venta',
+      voided: false,
+    },
+    {
+      id: 's-quincena',
+      at: new Date(2026, 9, 20, 12, 0).getTime(),
+      cents: 300,
+      method: 'efectivo',
+      products: [],
+      note: '',
+      clientName: '',
+      kind: 'venta',
+      voided: false,
+    },
+    {
+      id: 's-mes',
+      at: new Date(2026, 9, 2, 9, 0).getTime(),
+      cents: 400,
+      method: 'fiado',
+      products: [],
+      note: '',
+      clientName: 'Sara',
+      kind: 'venta',
+      voided: false,
+    },
+  )
+  assert.equal(periodSummary(state, 'hoy', now).total, 5550)
+  assert.equal(periodSummary(state, 'semana', now).total, 5750)
+  assert.equal(periodSummary(state, 'quincena', now).total, 6050)
+  assert.equal(periodSummary(state, 'mes', now).total, 6450)
+  assert.equal(inPeriod(new Date(2026, 9, 2, 9, 0).getTime(), 'hoy', now), false)
+  assert.equal(inPeriod(new Date(2026, 9, 2, 9, 0).getTime(), 'mes', now), true)
 })
 
 test('el historial incluye ventas de todas las fechas en orden descendente', () => {
@@ -249,7 +297,31 @@ test('el punto de la calculadora separa los centavos', () => {
   assert.equal(typedCents('20.'), 2000)
   assert.equal(typedCents('20.5'), 2050)
   assert.equal(typedCents('20.55'), 2055)
+  assert.equal(typedCents('10.05'), 1005)
   assert.equal(typedCents(''), 0)
+})
+
+test('la calculadora suma cada número una sola vez', () => {
+  let typed = ''
+  for (const digit of ['1', '0']) typed = appendDigit(typed, digit)
+  typed = appendDot(typed)
+  typed = appendDigit(typed, '5')
+  typed = appendDigit(typed, '0')
+  typed = appendDigit(typed, '9')
+  assert.equal(typed, '10.50')
+  assert.equal(typedCents(typed), 1050)
+  let saved = commitTyped([], typed)
+  assert.equal(saved.added, true)
+  assert.deepEqual(saved.lines, [1050])
+  saved = commitTyped(saved.lines, saved.typed)
+  assert.equal(saved.added, false)
+  assert.equal(calcTotal(saved.lines, saved.typed), 1050)
+  typed = appendDigit(appendDigit('', '2'), '5')
+  saved = commitTyped(saved.lines, typed)
+  assert.deepEqual(saved.lines, [1050, 2500])
+  assert.equal(calcTotal(saved.lines, '3'), 3550 + 300)
+  assert.equal(appendDigit('0', '8'), '8')
+  assert.equal(appendDot('12.3'), '12.3')
 })
 
 test('la voz escribe el número de operación', () => {
@@ -258,6 +330,88 @@ test('la voz escribe el número de operación', () => {
   assert.equal(spokenDigits('setenta y ocho noventa y cinco'), '7895')
   assert.equal(spokenDigits('el número es cero uno dos'), '012')
   assert.equal(spokenDigits('doble cero cinco'), '005')
+})
+
+function paintQr(text) {
+  const matrix = qrMatrix(text, 0)
+  const scale = 6
+  const quiet = 4
+  const size = (matrix.length + quiet * 2) * scale
+  const data = new Uint8ClampedArray(size * size * 4)
+  data.fill(255)
+  for (let y = 0; y < matrix.length; y += 1) {
+    for (let x = 0; x < matrix.length; x += 1) {
+      if (!matrix[y][x]) continue
+      for (let dy = 0; dy < scale; dy += 1) {
+        for (let dx = 0; dx < scale; dx += 1) {
+          const px = quiet * scale + x * scale + dx
+          const py = quiet * scale + y * scale + dy
+          const i = (py * size + px) * 4
+          data[i] = data[i + 1] = data[i + 2] = 0
+        }
+      }
+    }
+  }
+  return { data, size }
+}
+
+function pngFile(rgba, width, height) {
+  const raw = Buffer.alloc((width * 3 + 1) * height)
+  for (let y = 0; y < height; y += 1) {
+    raw[y * (width * 3 + 1)] = 0
+    for (let x = 0; x < width; x += 1) {
+      const from = (y * width + x) * 4
+      const to = y * (width * 3 + 1) + 1 + x * 3
+      raw[to] = rgba[from]
+      raw[to + 1] = rgba[from + 1]
+      raw[to + 2] = rgba[from + 2]
+    }
+  }
+  const ihdr = Buffer.alloc(13)
+  ihdr.writeUInt32BE(width, 0)
+  ihdr.writeUInt32BE(height, 4)
+  ihdr[8] = 8
+  ihdr[9] = 2
+  const chunk = (type, data) => {
+    const name = Buffer.from(type)
+    const length = Buffer.alloc(4)
+    length.writeUInt32BE(data.length)
+    const body = Buffer.concat([name, data])
+    const sum = Buffer.alloc(4)
+    sum.writeUInt32BE(zlib.crc32(body) >>> 0)
+    return Buffer.concat([length, body, sum])
+  }
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', zlib.deflateSync(raw)),
+    chunk('IEND', Buffer.alloc(0)),
+  ])
+}
+
+test('solo una imagen con código QR pasa la revisión', async () => {
+  const qr = paintQr('yape')
+  assert.equal(imageHasQr(qr.data, qr.size, qr.size), true)
+  const plain = new Uint8ClampedArray(80 * 80 * 4)
+  plain.fill(240)
+  assert.equal(imageHasQr(plain, 80, 80), false)
+  assert.equal(sniffImage(Uint8Array.from([0x25, 0x50, 0x44, 0x46])), 'otro')
+  assert.equal(sniffImage(Uint8Array.from([0xff, 0xd8, 0xff, 0xd9])), 'jpeg')
+  const accepted = await checkQrFile({ base64: pngFile(qr.data, qr.size, qr.size).toString('base64') })
+  assert.equal(accepted.ok, true)
+  assert.equal(accepted.kind, 'png')
+  const photo = new Uint8ClampedArray(120 * 90 * 4)
+  for (let i = 0; i < 120 * 90; i += 1) {
+    photo[i * 4] = (i * 3) % 255
+    photo[i * 4 + 1] = (i * 5) % 200
+    photo[i * 4 + 2] = 80
+    photo[i * 4 + 3] = 255
+  }
+  const rejected = await checkQrFile({ base64: pngFile(photo, 120, 90).toString('base64') })
+  assert.equal(rejected.ok, false)
+  const pdf = await checkQrFile({ base64: Buffer.from('%PDF-1.4').toString('base64') })
+  assert.equal(pdf.ok, false)
+  assert.equal(decodeJpeg(Uint8Array.from([0xff, 0xd8, 0xff, 0xd9])), null)
 })
 
 test('el código QR de Yape se puede leer', () => {

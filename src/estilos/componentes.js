@@ -3,16 +3,16 @@ import { StyleSheet } from 'react-native'
 import { colors } from './tema'
 import { useLook } from '../vistas/texto'
 
-function uiPalette(dark) {
+function uiPalette(dark, contrast) {
   return {
-    bg: dark ? '#000000' : colors.bg,
+    bg: dark ? '#000000' : contrast ? '#FFFFFF' : colors.bg,
     card: dark ? '#161616' : colors.white,
-    text: dark ? '#FFFFFF' : colors.text,
-    muted: dark ? '#D0D0D0' : colors.muted,
-    line: dark ? '#3A3A3A' : colors.line,
-    ink: dark ? '#E7FFF0' : colors.greenInk,
+    text: dark ? '#FFFFFF' : contrast ? '#111111' : colors.text,
+    muted: dark ? '#D0D0D0' : contrast ? '#1A1A1A' : colors.muted,
+    line: dark ? '#3A3A3A' : contrast ? '#111111' : colors.line,
+    ink: dark ? '#E7FFF0' : contrast ? '#111111' : colors.greenInk,
     soft: dark ? '#123524' : colors.greenSoft,
-    
+    dangerSoft: dark ? '#3A1618' : colors.redSoft,
   }
 }
 
@@ -75,19 +75,24 @@ function createUiStyles(p) {
   },
   dockLabel: { fontSize: 11, fontWeight: '800', textAlign: 'center' },
   voiceBtn: {
-    width: 98,
-    minHeight: 72,
-    borderRadius: 18,
-    backgroundColor: '#8ADCF6',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 2,
+    gap: 8,
+    minHeight: 48,
+    paddingHorizontal: 16,
     paddingVertical: 8,
-    paddingHorizontal: 6,
-    borderWidth: 3,
-    borderColor: '#0E6E96',
+    borderRadius: 999,
+    backgroundColor: colors.green,
+    borderWidth: 2,
+    borderColor: colors.greenInk,
+    shadowColor: colors.greenInk,
+    shadowOpacity: 0.28,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
   },
-  voiceBtnOn: { backgroundColor: '#B41D20', borderColor: '#FFFFFF' },
+  voiceBtnOn: { backgroundColor: colors.red, borderColor: '#FFFFFF' },
   voiceMark: { fontSize: 16, fontWeight: '800', color: p.ink },
   voiceLabel: { fontSize: 18, fontWeight: '800', color: p.ink },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 2 },
@@ -185,7 +190,7 @@ function createUiStyles(p) {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: colors.redSoft,
+    backgroundColor: p.dangerSoft,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 10,
@@ -208,7 +213,7 @@ function createUiStyles(p) {
 }
 
 export function useUiStyles() {
-  const { dark } = useLook()
-  const p = uiPalette(dark)
-  return useMemo(() => createUiStyles(p), [p.bg, p.card, p.text, p.muted, p.line, p.ink, p.soft])
+  const { dark, contrast } = useLook()
+  const p = uiPalette(dark, contrast)
+  return useMemo(() => createUiStyles(p), [p.bg, p.card, p.text, p.muted, p.line, p.ink, p.soft, p.dangerSoft])
 }

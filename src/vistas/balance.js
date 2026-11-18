@@ -9,7 +9,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native'
-import { colors, helpText, methods, periods, voiceText } from '../estilos/tema'
+import { colors, helpText, methodSurface, methods, periods, voiceText } from '../estilos/tema'
 import { useScreenStyles } from '../estilos/pantallas'
 import { Text, useLook } from './texto'
 import {
@@ -66,6 +66,7 @@ import {
 import { AmountBox, DetailRow, Frame, Tab, cartItems, productText } from './marco'
 export function Balance() {
   const styles = useScreenStyles()
+  const { dark } = useLook()
   const { state, push, pop } = useApp()
   const [period, setPeriod] = useState('hoy')
   const summary = periodSummary(state, period)
@@ -88,23 +89,23 @@ export function Balance() {
       <View style={styles.cajaCard}>
         <Text style={styles.cajaLabel}>{current.title}</Text>
         <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={styles.cajaMoney}>{formatMoney(summary.total)}</Text>
-        <Text style={styles.cajaSub}>Efectivo, Yape, Plin y fiados anotados</Text>
+        <Text style={styles.cajaSub}>Suma de las ventas guardadas de este periodo</Text>
       </View>
       <View style={{ gap: 10 }}>
-        <View style={[styles.methodLine, { backgroundColor: colors.blueSoft }]}>
+        <View style={[styles.methodLine, { backgroundColor: methodSurface(methods.efectivo, dark) }]}>
           <Text style={[styles.methodLineText, { color: colors.blue }]}>Efectivo</Text>
           <Text style={[styles.methodLineText, { color: colors.blue }]}>{formatMoney(summary.efectivo)}</Text>
         </View>
-        <View style={[styles.methodLine, { backgroundColor: colors.purpleSoft }]}>
+        <View style={[styles.methodLine, { backgroundColor: methodSurface(methods.yape, dark) }]}>
           <Text style={[styles.methodLineText, { color: colors.purple }]}>Yape</Text>
           <Text style={[styles.methodLineText, { color: colors.purple }]}>{formatMoney(summary.yape)}</Text>
         </View>
-        <View style={[styles.methodLine, { backgroundColor: colors.tealSoft }]}>
+        <View style={[styles.methodLine, { backgroundColor: methodSurface(methods.plin, dark) }]}>
           <Text style={[styles.methodLineText, { color: colors.teal }]}>Plin</Text>
           <Text style={[styles.methodLineText, { color: colors.teal }]}>{formatMoney(summary.plin)}</Text>
         </View>
         {summary.fiado > 0 ? (
-          <View style={[styles.methodLine, { backgroundColor: colors.amberSoft }]}>
+          <View style={[styles.methodLine, { backgroundColor: methodSurface(methods.fiado, dark) }]}>
             <Text style={[styles.methodLineText, { color: colors.brown }]}>Fiado anotado</Text>
             <Text style={[styles.methodLineText, { color: colors.brown }]}>{formatMoney(summary.fiado)}</Text>
           </View>

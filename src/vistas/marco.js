@@ -6,11 +6,13 @@ import { formatQty } from '../js/logica.mjs'
 import { useApp } from '../js/estado'
 import { usePhone } from '../js/telefono'
 import { Button, ModalCard, MoneyBig, SALE_LEAVE_BODY, SALE_LEAVE_TITLE, TopBar } from './interfaz'
-import { Text } from './texto'
+import { Text, useLook } from './texto'
 
 export function Frame({ children, footer, helpTopic, voice, onBack, onHome, mode = 'back', dirty = false, scroll = true, dismissKeyboardOnTouch = false }) {
   const styles = useScreenStyles()
   const { pad, wide } = usePhone()
+  const { spacing } = useLook()
+  const air = spacing > 1 ? 12 : 0
   const { goHome, clearSale } = useApp()
   const [askHome, setAskHome] = useState(false)
   function home() {
@@ -29,7 +31,7 @@ export function Frame({ children, footer, helpTopic, voice, onBack, onHome, mode
       {scroll ? (
         <ScrollView
           style={{ flex: 1 }}
-          contentContainerStyle={[styles.scroll, { paddingHorizontal: pad, paddingBottom: wide ? 28 : 12 }]}
+          contentContainerStyle={[styles.scroll, { paddingHorizontal: pad, paddingTop: 8 + air, paddingBottom: (wide ? 28 : 12) + air }]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={wide}
         >
