@@ -282,11 +282,14 @@ function AvatarChoice({ option, selected, onPress }) {
   )
 }
 
-export function AvatarPicker({ value, onChange }) {
+export function AvatarPicker({ value, onChange, limitToCurrentGroup = false }) {
   const styles = useScreenStyles()
+  const groups = limitToCurrentGroup
+    ? avatarGroups.filter((group) => group.options.some((option) => option.id === value))
+    : avatarGroups
   return (
     <View style={{ gap: 14 }}>
-      {avatarGroups.map((group) => (
+      {groups.map((group) => (
         <View key={group.title} style={{ gap: 8 }}>
           <Text style={styles.toggleTitle}>{group.title}</Text>
           <View style={styles.avatarRow}>
@@ -775,7 +778,7 @@ function DockHouse({ color }) {
 export function Dock() {
   const styles = useUiStyles()
   const { dark, contrast, scale } = useLook()
-  const { route, draft, go, goHome, clearSale } = useApp()
+  const { route, draft, go, goHome, clearSale, navigationGuard } = useApp()
   const [ask, setAsk] = useState(null)
   const name = route?.name
   const tabs = [
@@ -808,6 +811,10 @@ export function Dock() {
     const leavingSale = ['saleAmount', 'salePay'].includes(name)
     if (leavingSale && dirty) {
       setAsk(id)
+      return
+    }
+    if (name === 'settings' && navigationGuard) {
+      navigationGuard(id)
       return
     }
     goTab(id)
@@ -1384,7 +1391,7 @@ export function YapePanel({ brand = 'yape', cents, phone, qr, note = '', onNote,
         {qr ? `El cliente abre ${name} y escanea este QR.` : `Pago por ${name} al número registrado.`}
       </Text>
       {qr ? (
-        <View style={styles.qrBox}>
+        <View style={[styles.qrBox, { width: '100%', maxWidth: 252, alignItems: 'center' }]}>
           <Image
             source={{ uri: qr }}
             resizeMode="contain"

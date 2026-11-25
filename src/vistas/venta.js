@@ -280,7 +280,10 @@ export function SaleAmount() {
   }
 
   const spokenNow = hearing && speechView ? speechView.amounts : []
-  const shown = hearing && speechView ? calcTotal(speechView.base, '') + sumCents(spokenNow) : calcTotal(lines, typed)
+  const total = hearing && speechView
+    ? calcTotal(speechView.base, '') + sumCents(spokenNow)
+    : sumCents(lines)
+  const shown = hearing && speechView ? total : typed ? entry : 0
   const parts = hearing && speechView
     ? [...speechView.base, ...spokenNow]
     : [...lines, ...(entry > 0 ? [entry] : [])]
@@ -301,7 +304,13 @@ export function SaleAmount() {
         showsVerticalScrollIndicator={false}
       >
         <Step>Paso 1 de 2</Step>
-        <Title>¿Cuánto es la venta?</Title>
+        <View style={[styles.cajaCard, { marginTop: 4, marginBottom: 12 }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <Text style={[styles.cajaLabel, { marginBottom: 0 }]}>Total de la venta</Text>
+            <Text style={[styles.cajaMoney, { textAlign: 'right' }]}>{formatMoney(total)}</Text>
+          </View>
+        </View>
+        <Title>Haz Cuenta y Suma</Title>
         <View
           accessibilityLabel="Monto de la venta en soles"
           style={[styles.amountBox, { marginBottom: 12, minHeight: short ? 72 : 84, justifyContent: 'center', borderColor: hearing ? colors.red : colors.blue }]}
@@ -366,10 +375,6 @@ export function SaleAmount() {
             })}
           </View>
         ) : null}
-        <View style={[styles.cajaCard, { marginTop: 4, marginBottom: 12 }]}>
-          <Text style={styles.cajaLabel}>Total de la venta</Text>
-          <Text style={styles.cajaMoney}>{formatMoney(shown)}</Text>
-        </View>
         <View style={{ marginBottom: 10 }}>
           <Keypad
             onAdd={() => { if (hearingRef.current) finishHear(); else addTypedAmount() }}
@@ -409,7 +414,7 @@ export function SaleAmount() {
             </Text>
           </Pressable>
           <View style={{ flex: 1 }}>
-            <Button label="Siguiente" disabled={shown <= 0} onPress={goPay} />
+            <Button label="Siguiente" disabled={total <= 0} onPress={goPay} />
           </View>
         </View>
       </View>
@@ -490,6 +495,7 @@ export function SalePay() {
             note={sale.note}
             onNote={(note) => setDraft((current) => ({ ...current, sale: { ...current.sale, note } }))}
           />
+          
         ) : null}
         {sale.method === 'fiado' ? (
           <View style={{ marginTop: 14 }}>

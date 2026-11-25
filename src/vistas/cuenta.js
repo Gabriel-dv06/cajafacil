@@ -1,5 +1,5 @@
 // Cuenta: inicio de sesión, registro, perfil y ayuda.
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Image,
   KeyboardAvoidingView,
@@ -11,7 +11,7 @@ import {
   View,
 } from 'react-native'
 import * as ImagePicker from 'expo-image-picker'
-import { checkQrFile } from '../js/esqr.mjs'
+import { prepareWalletQr } from '../js/qrWallet.mjs'
 import { colors, helpText, methods, periods } from '../estilos/tema'
 import { useScreenStyles } from '../estilos/pantallas'
 import { Text, useLook } from './texto'
@@ -41,6 +41,7 @@ import {
   sessionUser,
   updateAccount,
   updateWallet,
+  updateWalletQr,
   totalDebt,
   voidSale,
   DEMO_CODE,
@@ -328,12 +329,56 @@ export function Login() {
 
 export function Settings() {
   const styles = useScreenStyles()
-  const { state, pop, patch, push } = useApp()
+  const { state, draft, setDraft, pop, patch, push, go, goHome, registerNavigationGuard } = useApp()
   const user = sessionUser(state)
-  const [avatar, setAvatar] = useState(user?.avatar || 'woman')
-  const [usePhoto, setUsePhoto] = useState(user?.usePhoto !== false)
+  const [avatar, setAvatar] = useState(draft.settingsAppearance?.avatar || user?.avatar || 'woman')
+  const [usePhoto, setUsePhoto] = useState(
+    draft.settingsAppearance ? draft.settingsAppearance.usePhoto : user?.usePhoto !== false,
+  )
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
+  const [leaveTo, setLeaveTo] = useState(null)
+  const hasUnsavedChanges = avatar !== (user?.avatar || 'woman') || usePhoto !== (user?.usePhoto !== false)
+
+  function navigateAway(destination) {
+    setLeaveTo(null)
+    if (!['yapeSettings', 'plinSettings'].includes(destination)) {
+      setDraft((current) => ({ ...current, settingsAppearance: null }))
+    }
+    if (destination.startsWith('tab:')) {
+      const tab = destination.slice(4)
+      if (tab === 'home') {
+        goHome()
+        return
+      }
+      go([{ name: 'home' }, { name: tab }])
+      return
+    }
+    if (destination === 'back') {
+      pop()
+      return
+    }
+    if (destination === 'home') {
+      goHome()
+      return
+    }
+    push(destination)
+  }
+
+  function requestLeave(destination) {
+    if (hasUnsavedChanges) {
+      setLeaveTo(destination)
+      return
+    }
+    navigateAway(destination)
+  }
+
+  const tabLeaveRef = useRef(null)
+  tabLeaveRef.current = (tab) => requestLeave(`tab:${tab}`)
+  useEffect(() => {
+    registerNavigationGuard((tab) => tabLeaveRef.current(tab))
+    return () => registerNavigationGuard(null)
+  }, [registerNavigationGuard])
 
   function saveAppearance() {
     const result = updateAccount(state, {
@@ -345,24 +390,51 @@ export function Settings() {
     if (!result.ok) {
       setSaved(false)
       setError(result.error)
-      return
+      return false
     }
     patch(() => result.state)
+    setDraft((current) => ({ ...current, settingsAppearance: null }))
     setError('')
     setSaved(true)
+    return true
+  }
+
+  function discardAndLeave() {
+    const destination = leaveTo
+    setAvatar(user?.avatar || 'woman')
+    setUsePhoto(user?.usePhoto !== false)
+    setDraft((current) => ({ ...current, settingsAppearance: null }))
+    setError('')
+    setSaved(false)
+    navigateAway(destination)
+  }
+
+  function saveAndLeave() {
+    if (saveAppearance()) navigateAway(leaveTo)
+  }
+
+  function changeAppearance(nextAvatar, nextUsePhoto) {
+    setAvatar(nextAvatar)
+    setUsePhoto(nextUsePhoto)
+    setDraft((current) => ({
+      ...current,
+      settingsAppearance: { avatar: nextAvatar, usePhoto: nextUsePhoto },
+    }))
+    setSaved(false)
   }
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <Frame
-        onBack={() => pop()}
+        onBack={() => requestLeave('back')}
+        onHome={() => requestLeave('home')}
         helpTopic="settings"
         footer={<Button label="Guardar cambios del perfil" onPress={saveAppearance} />}
       >
         <Title>Configurar</Title>
         <Sub>Administra tu contraseña y tus billeteras digitales.</Sub>
         <View style={{ gap: 10, marginBottom: 20 }}>
-          <Button label="Actualizar contraseña" variant="outline" onPress={() => push('passwordSettings')} />
+          <Button label="Actualizar contraseña" variant="outline" onPress={() => requestLeave('passwordSettings')} />
           <Button label="Yape" variant="outline" onPress={() => push('yapeSettings')} />
           <Button label="Plin" variant="outline" onPress={() => push('plinSettings')} />
         </View>
@@ -374,10 +446,11 @@ export function Settings() {
             <Text style={styles.readyText}>✓  Los cambios quedaron guardados.</Text>
           </View>
         ) : null}
-        <Text style={styles.toggleTitle}>Tu icono</Text>
+        <Text style={styles.toggleTitle}></Text>
         <AvatarPicker
           value={avatar}
-          onChange={(next) => { setAvatar(next); setSaved(false) }}
+          limitToCurrentGroup
+          onChange={(next) => changeAppearance(next, usePhoto)}
         />
         <View style={styles.toggleCard}>
           <View style={{ flex: 1 }}>
@@ -386,11 +459,21 @@ export function Settings() {
           </View>
           <Switch
             value={usePhoto}
-            onValueChange={(value) => { setUsePhoto(value); setSaved(false) }}
+            onValueChange={(value) => changeAppearance(avatar, value)}
             trackColor={{ true: colors.green, false: colors.line }}
             thumbColor={colors.white}
           />
         </View>
+        {leaveTo ? (
+          <ModalCard
+            title="Tienes cambios sin guardar"
+            body="Si sales de Configurar, perderás los cambios que aún no guardaste. ¿Qué quieres hacer?"
+          >
+            <Button label="Seguir configurando" variant="outline" onPress={() => setLeaveTo(null)} />
+            <Button label="Salir sin guardar" variant="red" onPress={discardAndLeave} />
+            <Button label="Guardar y salir" onPress={saveAndLeave} />
+          </ModalCard>
+        ) : null}
       </Frame>
     </KeyboardAvoidingView>
   )
@@ -519,15 +602,23 @@ export function WalletSettings({ brand }) {
         return
       }
       setChecking(true)
-      const check = await checkQrFile({ base64: asset.base64 })
+      const check = await prepareWalletQr({ asset, brand })
       if (!check.ok) {
         setError(check.error)
         return
       }
-      const mime = check.kind === 'png' ? 'image/png' : 'image/jpeg'
-      setQr(`data:${mime};base64,${asset.base64}`)
+      const saved = updateWalletQr(state, brand, check.qr)
+      if (!saved.ok) {
+        setError(saved.error)
+        return
+      }
+      patch(() => saved.state)
+      setQr(check.qr)
+      setDialog('qr-success')
     } catch (pickerError) {
-      setError('No se pudo abrir la galería. Intenta otra vez.')
+      setError(pickerError instanceof Error
+        ? pickerError.message
+        : 'No se pudo revisar la imagen. Intenta otra vez.')
     } finally {
       setChecking(false)
     }
@@ -591,7 +682,7 @@ export function WalletSettings({ brand }) {
             onChangeText={(value) => { setPhone(value.replace(/\D/g, '').slice(0, 9)); setError('') }}
           />
           <Text style={styles.toggleTitle}>Sube tu QR</Text>
-          <Sub>Solo el código QR de {name}, en foto JPG o PNG. Si es otra imagen u otro archivo, no se guarda.</Sub>
+          <Sub>La foto debe mostrar el QR y la palabra {name}. Se guardará automáticamente solo el recorte del QR.</Sub>
           <Button label={checking ? 'Revisando el QR...' : qr ? 'Cambiar QR' : 'Subir QR'} variant="outline" disabled={checking} onPress={pickQr} />
           {qr ? (
             <View style={{ alignItems: 'center', marginTop: 12 }}>
@@ -616,6 +707,11 @@ export function WalletSettings({ brand }) {
           <Button label="Sí, registrar" onPress={commit} />
         </ModalCard>
       ) : null}
+      {dialog === 'qr-success' ? (
+        <ModalCard title="QR actualizado" body={`Se actualizó exitosamente el QR de ${name}.`}>
+          <Button label="Entendido" onPress={() => setDialog('')} />
+        </ModalCard>
+      ) : null}
       {dialog === 'success' ? (
         <ModalCard
           title="Registro exitoso"
@@ -638,7 +734,14 @@ export function Account() {
 
   function signOut() {
     patch((current) => logout(current))
-    setDraft((current) => ({ ...current, phone: '', pin: '', code: '', sale: { cents: 0, method: null, products: [], lines: [], note: '', clientName: '' } }))
+    setDraft((current) => ({
+      ...current,
+      phone: '',
+      pin: '',
+      code: '',
+      settingsAppearance: null,
+      sale: { cents: 0, method: null, products: [], lines: [], note: '', clientName: '' },
+    }))
     go([{ name: 'splash' }])
   }
 

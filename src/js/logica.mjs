@@ -486,6 +486,20 @@ export function updateWallet(state, brand, { enabled, phone, qr }) {
   return { ok: true, state: next }
 }
 
+export function updateWalletQr(state, brand, qr) {
+  if (brand !== 'yape' && brand !== 'plin') {
+    return { ok: false, error: 'Selecciona Yape o Plin.', state }
+  }
+  if (typeof qr !== 'string' || !qr) {
+    return { ok: false, error: 'El código QR no es válido.', state }
+  }
+  const next = clone(state)
+  const user = next.users.find((item) => item.id === next.sessionUserId)
+  if (!user) return { ok: false, error: 'Entra a tu cuenta para configurar.', state }
+  user[`${brand}Qr`] = qr
+  return { ok: true, state: next }
+}
+
 export function logout(state) {
   const next = clone(state)
   next.sessionUserId = null

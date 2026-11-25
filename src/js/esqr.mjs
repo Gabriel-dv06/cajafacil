@@ -6,6 +6,10 @@ const ZZ = [
   39, 46, 53, 60, 61, 54, 47, 55, 62, 63,
 ]
 
+const COS = Array.from({ length: 8 }, (_, position) => (
+  Array.from({ length: 8 }, (_, frequency) => Math.cos(((2 * position + 1) * frequency * Math.PI) / 16))
+))
+
 export function sniffImage(bytes) {
   if (!bytes || bytes.length < 4) return 'otro'
   if (bytes[0] === 0xff && bytes[1] === 0xd8) return 'jpeg'
@@ -109,6 +113,83 @@ export function imageHasQr(rgba, width, height) {
   collect(false)
   if (centers.length < 3) collect(true)
   return finderTrio(centers)
+}
+
+export function hasWalletBrandText(text, brand) {
+  const expected = brand === 'yape' ? 'YAPE' : brand === 'plin' ? 'PLIN' : ''
+  if (!expected) return false
+  const words = String(text || '').toUpperCase().split(/[^A-Z0-9]+/)
+  const candidates = [...words]
+  for (let start = 0; start < words.length; start += 1) {
+    let joined = ''
+    for (let end = start; end < Math.min(words.length, start + 3); end += 1) {
+      joined += words[end]
+      if (joined.length >= 3 && joined.length <= 5) candidates.push(joined)
+      if (joined.length > 5) break
+    }
+  }
+  return candidates.some((word) => word.length >= 3 && word.length <= 5 && editDistance(word, expected) <= 2)
+}
+
+function editDistance(left, right) {
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index)
+  for (let i = 1; i <= left.length; i += 1) {
+    let diagonal = previous[0]
+    previous[0] = i
+    for (let j = 1; j <= right.length; j += 1) {
+      const above = previous[j]
+      previous[j] = Math.min(
+        previous[j] + 1,
+        previous[j - 1] + 1,
+        diagonal + (left[i - 1] === right[j - 1] ? 0 : 1),
+      )
+      diagonal = above
+    }
+  }
+  return previous[right.length]
+}
+
+export function qrCropRect(location, width, height) {
+  const points = [
+    location?.topLeftCorner,
+    location?.topRightCorner,
+    location?.bottomLeftCorner,
+    location?.bottomRightCorner,
+  ]
+  if (points.some((point) => !point || !Number.isFinite(point.x) || !Number.isFinite(point.y))) return null
+  const minX = Math.min(...points.map((point) => point.x))
+  const maxX = Math.max(...points.map((point) => point.x))
+  const minY = Math.min(...points.map((point) => point.y))
+  const maxY = Math.max(...points.map((point) => point.y))
+  const padding = Math.max(2, Math.ceil(Math.max(maxX - minX, maxY - minY) * 0.015))
+  const originX = Math.max(0, Math.floor(minX - padding))
+  const originY = Math.max(0, Math.floor(minY - padding))
+  const right = Math.min(width, Math.ceil(maxX + padding))
+  const bottom = Math.min(height, Math.ceil(maxY + padding))
+  if (right <= originX || bottom <= originY) return null
+  return { originX, originY, width: right - originX, height: bottom - originY }
+}
+
+export function plinLogoCropRect(location, width, height) {
+  const points = [
+    location?.topLeftCorner,
+    location?.topRightCorner,
+    location?.bottomLeftCorner,
+    location?.bottomRightCorner,
+  ]
+  if (points.some((point) => !point || !Number.isFinite(point.x) || !Number.isFinite(point.y))) return null
+  const minX = Math.min(...points.map((point) => point.x))
+  const maxX = Math.max(...points.map((point) => point.x))
+  const minY = Math.min(...points.map((point) => point.y))
+  const span = Math.max(maxX - minX, Math.max(...points.map((point) => point.y)) - minY)
+  if (span <= 0) return null
+  const centerX = (minX + maxX) / 2
+  const left = Math.max(0, Math.floor(centerX - span * 0.38))
+  const right = Math.min(width, Math.ceil(centerX + span * 0.38))
+  const top = Math.max(0, Math.floor(minY - span * 1.05))
+  const bottom = Math.min(height, Math.ceil(minY - span * 0.45))
+  if (right <= left || bottom <= top) return null
+  return { originX: left, originY: top, width: right - left, height: bottom - top }
 }
 
 function finderTrio(points) {
@@ -235,10 +316,10 @@ function idct(block) {
       let sum = 0
       for (let v = 0; v < 8; v += 1) {
         const cv = v === 0 ? 0.70710678118 : 1
-        const cosY = Math.cos(((2 * y + 1) * v * Math.PI) / 16)
+        const cosY = COS[y][v]
         for (let u = 0; u < 8; u += 1) {
           const cu = u === 0 ? 0.70710678118 : 1
-          sum += cu * cv * block[v * 8 + u] * Math.cos(((2 * x + 1) * u * Math.PI) / 16) * cosY
+          sum += cu * cv * block[v * 8 + u] * COS[x][u] * cosY
         }
       }
       const value = Math.round(sum / 4 + 128)

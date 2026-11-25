@@ -19,6 +19,7 @@ function emptyDraft() {
     pin: '',
     avatar: 'woman',
     usePhoto: true,
+    settingsAppearance: null,
     sale: emptySale(),
     fiadoName: '',
     cobroCents: 0,
@@ -49,6 +50,7 @@ export function StoreProvider({ children }) {
   const [state, setState] = useState(() => normalize(createInitialState()))
   const [draft, setDraft] = useState(emptyDraft)
   const [stack, setStack] = useState([{ name: 'splash' }])
+  const [navigationGuard, setNavigationGuard] = useState(null)
   const [ready, setReady] = useState(false)
 
   useEffect(() => {
@@ -116,11 +118,15 @@ export function StoreProvider({ children }) {
     })
   }, [])
 
+  const registerNavigationGuard = useCallback((guard) => {
+    setNavigationGuard(() => guard)
+  }, [])
+
   const route = stack[stack.length - 1]
 
   return (
     <StoreContext.Provider
-      value={{ state, draft, setDraft, route, ready, push, pop, go, goHome, patch, clearSale }}
+      value={{ state, draft, setDraft, route, ready, push, pop, go, goHome, patch, clearSale, navigationGuard, registerNavigationGuard }}
     >
       {children}
     </StoreContext.Provider>

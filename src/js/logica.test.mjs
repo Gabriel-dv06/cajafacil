@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import zlib from 'node:zlib'
+import jsQR from 'jsqr'
 import {
   addFiado,
   addSale,
@@ -20,10 +21,19 @@ import {
   totalDebt,
   updateAccount,
   updateWallet,
+  updateWalletQr,
   voidSale,
 } from './logica.mjs'
 import { qrMatrix } from './qr.mjs'
-import { checkQrFile, decodeJpeg, imageHasQr, sniffImage } from './esqr.mjs'
+import {
+  checkQrFile,
+  decodeJpeg,
+  hasWalletBrandText,
+  imageHasQr,
+  plinLogoCropRect,
+  qrCropRect,
+  sniffImage,
+} from './esqr.mjs'
 import { appendDigit, appendDot, applySpeech, calcTotal, commitTyped, createSpeechLedger, parseSpokenAmounts, spokenDigits, sumCents, typedCents } from './montos.mjs'
 
 const now = new Date(2026, 9, 30, 18, 0, 0)
@@ -252,6 +262,17 @@ test('las billeteras empiezan desactivadas y guardan sus datos por separado', ()
   assert.equal(invalid.ok, false)
 })
 
+test('guardar un QR no cambia otros ajustes de la billetera', () => {
+  const state = flor()
+  const saved = updateWalletQr(state, 'yape', 'data:image/png;base64,qr-validado')
+  assert.equal(saved.ok, true)
+  assert.equal(sessionUser(saved.state).yapeQr, 'data:image/png;base64,qr-validado')
+  assert.equal(sessionUser(saved.state).yapeEnabled, sessionUser(state).yapeEnabled)
+  assert.equal(sessionUser(saved.state).yapePhone, sessionUser(state).yapePhone)
+  assert.equal(sessionUser(state).yapeQr, undefined)
+  assert.equal(updateWalletQr(state, 'plin', '').ok, false)
+})
+
 test('las cuentas existentes quedan con billeteras desactivadas por defecto', () => {
   const migrated = ensureCatalog({
     users: [{ id: 'old-user', phone: '999888777' }],
@@ -392,9 +413,27 @@ function pngFile(rgba, width, height) {
 test('solo una imagen con código QR pasa la revisión', async () => {
   const qr = paintQr('yape')
   assert.equal(imageHasQr(qr.data, qr.size, qr.size), true)
+  const scanned = jsQR(qr.data, qr.size, qr.size)
+  assert.equal(scanned.data, 'yape')
+  const crop = qrCropRect(scanned.location, qr.size, qr.size)
+  assert.ok(crop.width > 0 && crop.height > 0)
+  assert.equal(hasWalletBrandText('Yape - código de pago', 'yape'), true)
+  assert.equal(hasWalletBrandText('YAFE - código de pago', 'yape'), true)
+  assert.equal(hasWalletBrandText('Y"HAFE\\niz [=] A;', 'yape'), true)
+  assert.equal(hasWalletBrandText('Yape - código de pago', 'plin'), false)
+  assert.equal(hasWalletBrandText('PLIN', 'yape'), false)
+  assert.equal(hasWalletBrandText('PIN', 'plin'), true)
+  const logoRect = plinLogoCropRect({
+    topLeftCorner: { x: 266, y: 412 },
+    topRightCorner: { x: 503, y: 412 },
+    bottomLeftCorner: { x: 267, y: 648 },
+    bottomRightCorner: { x: 502, y: 648 },
+  }, 768, 1167)
+  assert.deepEqual(logoRect, { originX: 294, originY: 163, width: 181, height: 143 })
   const plain = new Uint8ClampedArray(80 * 80 * 4)
   plain.fill(240)
   assert.equal(imageHasQr(plain, 80, 80), false)
+  assert.equal(jsQR(plain, 80, 80), null)
   assert.equal(sniffImage(Uint8Array.from([0x25, 0x50, 0x44, 0x46])), 'otro')
   assert.equal(sniffImage(Uint8Array.from([0xff, 0xd8, 0xff, 0xd9])), 'jpeg')
   const accepted = await checkQrFile({ base64: pngFile(qr.data, qr.size, qr.size).toString('base64') })
